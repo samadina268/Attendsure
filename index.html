@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Attendance Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@500;700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout: control bar on top, then three panels side by side (lecturer phone · student phone · server report), stacking to one column on phones */
+  --bg:#eef2f0; --surface:#ffffff; --sunk:#f5f8f6; --ink:#13201b; --muted:#56665f; --line:#d5ded9;
+  --accent:#0b6b4f; --accent-ink:#ffffff; --accent-soft:#e0efe8;
+  --ok:#17794a; --ok-soft:#e1f2e8; --warn:#9a5a00; --warn-soft:#fbeed6; --bad:#b3261e; --bad-soft:#fbe3e1;
+  --bt:#1f5fbf; --bt-soft:#e3ecfa;
+  --frame:#1c2823;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"Public Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1412; --surface:#16201c; --sunk:#1c2722; --ink:#e5eee9; --muted:#9aaca4; --line:#2b3a33;
+    --accent:#45c494; --accent-ink:#06140f; --accent-soft:#173a2d;
+    --ok:#52cc8f; --ok-soft:#163426; --warn:#f0b24e; --warn-soft:#372a12; --bad:#f28b81; --bad-soft:#3b1d1a;
+    --bt:#7fb0ff; --bt-soft:#1a2a45;
+    --frame:#030605; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1412; --surface:#16201c; --sunk:#1c2722; --ink:#e5eee9; --muted:#9aaca4; --line:#2b3a33;
+  --accent:#45c494; --accent-ink:#06140f; --accent-soft:#173a2d;
+  --ok:#52cc8f; --ok-soft:#163426; --warn:#f0b24e; --warn-soft:#372a12; --bad:#f28b81; --bad-soft:#3b1d1a;
+  --bt:#7fb0ff; --bt-soft:#1a2a45;
+  --frame:#030605; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--body);}
+h1,h2,h3,h4{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:.55rem .8rem;font-weight:600;text-align:center}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.ghost{background:transparent}
+button.danger{color:var(--bad)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+select,input[type=text],input[type=number]{width:100%;padding:.5rem .6rem;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+input[type=text]{font-family:var(--mono);text-transform:uppercase}
+.wrap{max-width:1280px;margin:0 auto;padding:0 20px}
+
+.top{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;padding:20px 0 14px}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:42px;height:42px;border-radius:12px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font:700 22px var(--display)}
+.brand h1{font-size:1.45rem}
+.brand p{margin:0;color:var(--muted);font-size:.9rem}
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.net-btn{display:flex;align-items:center;gap:10px;padding:.5rem .9rem;border-radius:999px;border-width:2px}
+.net-btn .sw{width:38px;height:22px;border-radius:999px;background:var(--warn);position:relative;flex:none;transition:background .2s}
+.net-btn .sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s}
+.net-btn[aria-pressed="true"] .sw{background:var(--ok)}
+.net-btn[aria-pressed="true"] .sw::after{left:19px}
+.net-btn[aria-pressed="false"]{border-color:var(--warn);background:var(--warn-soft)}
+.net-btn[aria-pressed="true"]{border-color:var(--ok);background:var(--ok-soft)}
+
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px;overflow-x:auto}
+.tabs a{padding:.6rem 1rem;color:var(--muted);text-decoration:none;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap}
+.tabs a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
+.view{display:none;padding-bottom:40px}
+.view.on{display:block}
+
+.hint{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:.7rem 1rem;margin:0 0 18px}
+.hint ol{margin:.3rem 0 0;padding-left:1.2rem}
+.grid3{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.35fr);gap:18px;align-items:start}
+@media (max-width:1050px){.grid3{grid-template-columns:1fr 1fr}.grid3 > .server{grid-column:1 / -1}}
+@media (max-width:680px){.grid3{grid-template-columns:1fr}}
+
+.device{background:var(--frame);border-radius:30px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.12)}
+.device .screen{background:var(--surface);border-radius:22px;padding:16px;display:flex;flex-direction:column;gap:12px;min-height:600px}
+.dev-head{display:flex;justify-content:space-between;align-items:center;color:#cfe0d8;font-size:.78rem;padding:4px 12px 8px;font-weight:600;letter-spacing:.02em;gap:8px}
+.sig{display:inline-flex;gap:10px;align-items:center}
+.sig span{display:inline-flex;gap:5px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--warn);display:inline-block}
+.dot.on{background:#52cc8f}
+.dot.bt{background:#7fb0ff}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.panel-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.panel-head h3{font-size:1.1rem}
+.kicker{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+
+.course b{display:block;font-family:var(--display);font-size:1.05rem}
+.course span{color:var(--muted);font-size:.85rem}
+
+/* bluetooth broadcast */
+.bcast{background:var(--bt-soft);border-radius:14px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.rings{position:relative;width:96px;height:96px;display:grid;place-items:center}
+.rings i{position:absolute;inset:0;border:2px solid var(--bt);border-radius:50%;opacity:0;animation:ring 2.4s ease-out infinite}
+.rings i:nth-child(2){animation-delay:.8s}.rings i:nth-child(3){animation-delay:1.6s}
+.rings b{width:44px;height:44px;border-radius:50%;background:var(--bt);color:#fff;display:grid;place-items:center;font:700 .8rem var(--mono);position:relative;z-index:1}
+.rings.idle i{animation:none}
+.rings.idle b{background:var(--muted)}
+@keyframes ring{from{transform:scale(.45);opacity:.9}to{transform:scale(1);opacity:0}}
+.bcast strong{font-family:var(--display);color:var(--bt)}
+.bcast small{color:var(--muted);font-size:.8rem}
+.code{font:700 1.1rem var(--mono);letter-spacing:.2em}
+.bar{width:100%;height:5px;border-radius:99px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--bt);width:100%}
+
+.count{display:flex;gap:12px;align-items:center}
+.count .big{font:700 2.4rem/1 var(--display);font-variant-numeric:tabular-nums;color:var(--accent)}
+.count small{color:var(--muted)}
+.mini{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:170px;overflow:auto;font-size:.86rem}
+.mini li{display:flex;justify-content:space-between;gap:8px;padding:4px 8px;border-radius:6px;background:var(--sunk)}
+.mini li span:last-child{color:var(--muted);font-family:var(--mono);font-size:.78rem;white-space:nowrap}
+.mini li.absent span:first-child{color:var(--bad)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row > *{flex:1 1 auto}
+.stack{display:flex;flex-direction:column;gap:6px}
+label.lbl{font-size:.8rem;font-weight:700;color:var(--muted)}
+fieldset{border:1px solid var(--line);border-radius:12px;padding:8px 10px 10px;margin:0;display:flex;flex-direction:column;gap:4px}
+legend{font-size:.8rem;font-weight:700;color:var(--muted);padding:0 4px}
+fieldset label{display:flex;gap:8px;align-items:center;font-size:.9rem;cursor:pointer}
+input[type=radio]{accent-color:var(--accent)}
+.divider{border-top:1px dashed var(--line);margin:2px 0}
+
+/* student app cards */
+.app{display:flex;flex-direction:column;gap:10px}
+.idbar{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:8px 10px;font-size:.85rem}
+.idbar b{display:block}
+.idbar span{color:var(--muted);font-family:var(--mono);font-size:.78rem}
+.lock{font-size:.72rem;font-weight:700;color:var(--ok);background:var(--ok-soft);border-radius:99px;padding:.1rem .5rem;white-space:nowrap}
+.card{border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line)}
+.card h4{font-size:1.05rem}
+.card p{margin:0;font-size:.9rem}
+.card .meta{font-size:.82rem;color:var(--muted)}
+.card.open{background:var(--bt-soft);border-color:transparent}
+.card.done{background:var(--ok-soft);border-color:transparent}
+.card.done h4{color:var(--ok)}
+.card.none{background:var(--sunk)}
+.card.err{background:var(--bad-soft);border-color:transparent}
+.card.err h4,.card.err p{color:var(--bad)}
+.fp{width:56px;height:56px;border-radius:50%;border:2px solid var(--accent);display:grid;place-items:center;margin:4px auto}
+.fp svg{width:30px;height:30px;stroke:var(--accent)}
+
+/* pills & tables */
+.pill{display:inline-block;padding:.12rem .55rem;border-radius:999px;font-size:.75rem;font-weight:700;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.wait{background:var(--sunk);color:var(--muted);border:1px solid var(--line)}
+.state{border-radius:12px;padding:.7rem .9rem;font-size:.9rem}
+.state.off{background:var(--warn-soft);color:var(--warn)}
+.state.on{background:var(--ok-soft);color:var(--ok)}
+.state b{display:block}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media (max-width:420px){.tiles{grid-template-columns:1fr 1fr}}
+.tile{background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.tile b{display:block;font:700 1.5rem/1.1 var(--display);font-variant-numeric:tabular-nums}
+.tile span{font-size:.75rem;color:var(--muted);font-weight:600}
+.tile.ok b{color:var(--ok)} .tile.warn b{color:var(--warn)} .tile.bad b{color:var(--bad)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{text-align:left;padding:.5rem .65rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.t{font-family:var(--mono);font-size:.78rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+td .why{display:block;color:var(--muted);font-size:.78rem;margin-top:2px}
+td .sub{display:block;color:var(--muted);font-size:.76rem;font-family:var(--mono)}
+td .risk{display:block;color:var(--bad);font-size:.76rem;font-weight:600}
+.pct{font:700 .95rem var(--display);font-variant-numeric:tabular-nums}
+.pct.low{color:var(--bad)}
+.meter{height:5px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:3px;width:70px;position:relative}
+.meter i{display:block;height:100%;background:var(--ok)}
+.meter.low i{background:var(--bad)}
+.meter::after{content:"";position:absolute;left:75%;top:0;bottom:0;width:2px;background:var(--ink);opacity:.5}
+.empty{color:var(--muted);text-align:center;padding:1.2rem}
+.portal{display:flex;gap:10px;align-items:center;background:var(--accent-soft);border-radius:12px;padding:.7rem .9rem;font-size:.9rem}
+.portal b{font-family:var(--display);font-size:1.3rem;color:var(--accent);font-variant-numeric:tabular-nums}
+.new{animation:flash 1.2s ease-out}
+@keyframes flash{from{background:var(--accent-soft)}to{background:transparent}}
+@media (prefers-reduced-motion: reduce){.new{animation:none}.rings i{animation:none;opacity:.35;transform:scale(.8)}.net-btn .sw,.net-btn .sw::after{transition:none}}
+
+.how{display:flex;flex-direction:column;gap:22px}
+.how h2{font-size:1.5rem}
+.how p.lead{max-width:68ch;color:var(--muted);margin:.3rem 0 0}
+.cols3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media (max-width:900px){.cols3{grid-template-columns:1fr}}
+.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:10px}
+.steps li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:10px;font-size:.92rem}
+.steps li::before{content:counter(s);width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:700;display:grid;place-items:center;font-size:.8rem}
+.plain{margin:0;padding-left:1.1rem;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.flow{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+@media (max-width:1000px){.flow{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.flow{grid-template-columns:1fr}}
+.flow div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:.88rem}
+.flow b{display:block;font-family:var(--display);font-size:1rem;margin-bottom:2px}
+.flow .tag{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.flow .tag.once{color:var(--accent)} .flow .tag.off{color:var(--bt)} .flow .tag.onl{color:var(--ok)}
+.calc{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:700px){.calc{grid-template-columns:1fr 1fr}}
+.calc label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;font-weight:700;color:var(--muted)}
+.calc input{font-variant-numeric:tabular-nums}
+.result{display:flex;flex-wrap:wrap;gap:24px;align-items:baseline}
+.result div b{font:700 2rem/1 var(--display);color:var(--accent);font-variant-numeric:tabular-nums;display:block}
+.result div span{font-size:.82rem;color:var(--muted)}
+.note{font-size:.82rem;color:var(--muted);margin:0}
+
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:.65rem 1rem;border-radius:12px;font-size:.9rem;font-weight:600;max-width:min(92vw,520px);opacity:0;pointer-events:none;transition:opacity .2s;z-index:10}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">A</span>
+      <div>
+        <h1>AttendSure</h1>
+        <p>Bluetooth attendance for students and staff. Works with no internet.</p>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="netBtn" class="net-btn" aria-pressed="false"><span class="sw" aria-hidden="true"></span><span id="netTxt">Internet is off</span></button>
+      <button id="resetBtn" class="ghost">Reset demo</button>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Sections">
+    <a href="#lecture" data-v="lecture">Lecture attendance</a>
+    <a href="#staff" data-v="staff">Staff clock-in</a>
+    <a href="#how" data-v="how">How it works</a>
+  </nav>
+
+  <!-- LECTURE -->
+  <section id="v-lecture" class="view">
+    <div class="hint"><b>Demo script for the pitch</b> (internet starts off, like LT1 on a bad day):
+      <ol>
+        <li>On the lecturer's phone, tap <b>Start attendance</b>.</li>
+        <li>On the student phone, pick the phone for <b>CVE/2024/031</b> and tap <b>Mark me present</b>, then confirm with fingerprint.</li>
+        <li>Pick the <b>New phone (not set up)</b> and register it with matric <b>CVE/2024/115</b>. Then try registering a matric that is already taken.</li>
+        <li>Pick the phone for <b>CVE/2024/078</b> and choose <b>Someone else's finger</b> to show a friend can't mark for that student.</li>
+        <li>On the lecturer's phone, mark <b>CVE/2024/090</b> by hand (no smartphone), then tap <b>End session</b>.</li>
+        <li>Turn the internet on (top right). Watch the report fill with present, absent and attendance percentages.</li>
+      </ol>
+    </div>
+    <div class="grid3">
+      <article class="device" aria-label="Lecturer's phone">
+        <div class="dev-head"><span>LECTURER'S PHONE</span><span class="sig"><span><span class="dot bt"></span>Bluetooth</span><span><span class="dot" id="lecDot"></span><span id="lecSig">No internet</span></span></span></div>
+        <div class="screen">
+          <div class="course"><b>CVE 201 · Strength of Materials</b><span>Engr. Dr. B. Adewale · LT1 · Lecture 12 of 26</span></div>
+          <div id="lecIdle" class="card none">
+            <h4>Ready to take attendance</h4>
+            <p class="meta">9 students registered for this course. Tapping Start makes your phone share the course and a session code over Bluetooth. No internet needed.</p>
+            <button class="primary" id="startBtn" style="padding:.9rem;font-size:1.05rem">Start attendance</button>
+          </div>
+          <div id="lecLive" class="stack" style="gap:12px">
+          <div class="bcast" id="lecCast">
+            <div class="rings" id="lecRings"><i></i><i></i><i></i><b>BT</b></div>
+            <strong id="lecCastT">Attendance is open</strong>
+            <span>Sharing <b>CVE 201</b> + session code <span class="code" id="lecCode">----</span></span>
+            <div class="bar"><i id="lecBar"></i></div>
+            <small id="lecCastS">Code changes every 10 s. Reaches students in the hall, not outside.</small>
+          </div>
+          <div class="count"><span class="big" id="lecCount">0</span><span>of <span id="lecTotal">9</span> students present<br><small>Records arrive from students' phones by Bluetooth</small></span></div>
+          <ul class="mini" id="lecList"></ul>
+          <div class="divider"></div>
+          <div class="stack">
+            <label class="lbl" for="manSel">Mark by hand (dead phone or no smartphone)</label>
+            <div class="row"><select id="manSel"></select><button id="manBtn">Mark present</button></div>
+          </div>
+          <button id="endBtn" class="danger">End session</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="device" aria-label="Student's phone">
+        <div class="dev-head"><span>STUDENT'S PHONE</span><span class="sig"><span><span class="dot bt"></span>Bluetooth</span><span><span class="dot" id="stuDot"></span><span id="stuSig">No internet</span></span></span></div>
+        <div class="screen">
+          <div class="stack">
+            <label class="lbl" for="phoneSel">Whose phone are you holding? (demo control)</label>
+            <select id="phoneSel"></select>
+          </div>
+          <fieldset>
+            <legend>Where is the phone?</legend>
+            <label><input type="radio" name="rng" value="in" id="rIn" checked> In LT1, about 6 m from the lecturer</label>
+            <label><input type="radio" name="rng" value="out" id="rOut"> In the hostel (out of Bluetooth range)</label>
+          </fieldset>
+          <div class="divider"></div>
+          <div class="app" id="stuApp"></div>
+        </div>
+      </article>
+
+      <article class="panel server" aria-label="University server report">
+        <div class="panel-head"><h3>Attendance report</h3><span class="kicker">university server · CVE 201</span></div>
+        <div id="srvState" class="state off"></div>
+        <div class="tiles">
+          <div class="tile ok"><b id="tPres">0</b><span>Present today</span></div>
+          <div class="tile bad"><b id="tAbs">–</b><span>Absent today</span></div>
+          <div class="tile"><b id="tHand">0</b><span>Marked by hand</span></div>
+          <div class="tile warn"><b id="tRisk">0</b><span>Below 75%</span></div>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Matric number</th><th>Today</th><th>Semester attendance</th></tr></thead>
+            <tbody id="srvBody"></tbody>
+          </table>
+        </div>
+        <div class="portal"><b id="portalN">0</b><span id="portalTxt">lectures sent to the university portal</span></div>
+      </article>
+    </div>
+  </section>
+
+  <!-- STAFF -->
+  <section id="v-staff" class="view">
+    <p class="hint"><b>Try it:</b> a small Bluetooth beacon sits in the department office. Staff tap <b>Clock in</b> on arrival and <b>Clock out</b> when leaving. It only works when they are near the beacon. Records wait on the phone until there is internet, then reach the HOD and Registry.</p>
+    <div class="grid3">
+      <article class="device" aria-label="Office beacon">
+        <div class="dev-head"><span>OFFICE BEACON · ON THE WALL</span><span class="sig"><span><span class="dot bt"></span>Bluetooth</span></span></div>
+        <div class="screen">
+          <div class="course"><b>Dept. of Civil Engineering</b><span>Main office, Faculty of Engineering block</span></div>
+          <div class="bcast">
+            <div class="rings"><i></i><i></i><i></i><b>BT</b></div>
+            <strong>Beacon broadcasting</strong>
+            <span>Office ID <b>CVE-OFF-01</b> + code <span class="code" id="offCode">----</span></span>
+            <div class="bar"><i id="offBar"></i></div>
+            <small>Runs on a coin battery for about a year. Never needs internet.</small>
+          </div>
+          <p class="note">A beacon costs roughly ₦5,000–₦10,000. One per department office, or per faculty gate.</p>
+        </div>
+      </article>
+
+      <article class="device" aria-label="Staff phone">
+        <div class="dev-head"><span>STAFF MEMBER'S PHONE</span><span class="sig"><span><span class="dot bt"></span>Bluetooth</span><span><span class="dot" id="sfDot"></span><span id="sfSig">No internet</span></span></span></div>
+        <div class="screen">
+          <div class="stack">
+            <label class="lbl" for="sfSel">Signed in as</label>
+            <select id="sfSel"></select>
+          </div>
+          <div class="stack">
+            <label class="lbl" for="sfTime">Time of tap (for the demo)</label>
+            <select id="sfTime">
+              <option>07:48</option><option>07:59</option><option>08:20</option><option>09:15</option><option>16:05</option><option>17:10</option>
+            </select>
+          </div>
+          <fieldset>
+            <legend>Where is the staff member?</legend>
+            <label><input type="radio" name="sloc" value="in" id="slIn" checked> In the department office</label>
+            <label><input type="radio" name="sloc" value="far" id="slFar"> At home (no beacon nearby)</label>
+          </fieldset>
+          <div class="row">
+            <button id="inBtn" class="primary">Clock in</button>
+            <button id="outBtn">Clock out</button>
+          </div>
+          <div>
+            <h4 style="font-size:.9rem;margin-bottom:6px">Saved on staff phones</h4>
+            <ul class="mini" id="sfOut"></ul>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel server" aria-label="HOD and Registry view">
+        <div class="panel-head"><h3>HOD &amp; Registry view</h3><span class="kicker">today · resumption 08:00</span></div>
+        <div id="sfState" class="state off"></div>
+        <div class="tiles">
+          <div class="tile ok"><b id="sOk">0</b><span>On time</span></div>
+          <div class="tile warn"><b id="sLate">0</b><span>Late</span></div>
+          <div class="tile bad"><b id="sNo">0</b><span>Not in yet</span></div>
+          <div class="tile"><b id="sWait">0</b><span>Waiting to upload</span></div>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Staff</th><th>In</th><th>Out</th><th>Status</th></tr></thead>
+            <tbody id="sfBody"></tbody>
+          </table>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="v-how" class="view">
+    <div class="how">
+      <div>
+        <h2>How the system works</h2>
+        <p class="lead">Attendance is taken inside the hall over Bluetooth, with no internet and no projector. Each phone keeps a copy it cannot edit. When internet comes back, the records upload and the report updates itself.</p>
+      </div>
+
+      <div class="flow" aria-label="Steps from registration to report">
+        <div><span class="tag once">Once</span><b>1. Register</b>Student enters matric number. It is locked to that phone.</div>
+        <div><span class="tag off">In class · offline</span><b>2. Open</b>Lecturer taps Start attendance. Phone shares course and session code by Bluetooth.</div>
+        <div><span class="tag off">In class · offline</span><b>3. Mark</b>Students nearby tap Mark me present and confirm with fingerprint.</div>
+        <div><span class="tag off">In class · offline</span><b>4. Close</b>Lecturer marks dead-phone students by hand, then ends the session. No more marking.</div>
+        <div><span class="tag onl">Online later</span><b>5. Upload</b>Lecturer's and students' phones upload their copies when there is internet.</div>
+        <div><span class="tag onl">Online later</span><b>6. Report</b>Present, absent, percentages and exam eligibility. Sent to the portal.</div>
+      </div>
+
+      <div class="cols3">
+        <div class="panel">
+          <h3>Lecturer</h3>
+          <ol class="steps">
+            <li>Opens the app and taps <b>Start attendance</b> for the course.</li>
+            <li>Carries on teaching while names come in. A full hall takes 2–3 minutes.</li>
+            <li>Marks students with a dead phone or no smartphone by hand.</li>
+            <li>Taps <b>End session</b>. Nobody can mark after this.</li>
+            <li>Sees the full report once the phone gets internet.</li>
+          </ol>
+        </div>
+        <div class="panel">
+          <h3>Student</h3>
+          <ol class="steps">
+            <li>Registers once with their matric number. It is locked to that phone.</li>
+            <li>In class, the app shows <b>Attendance is open</b> by itself.</li>
+            <li>Taps <b>Mark me present</b> and confirms with fingerprint.</li>
+            <li>Sees their attendance percentage and gets a warning before falling below 75%.</li>
+          </ol>
+        </div>
+        <div class="panel">
+          <h3>Staff</h3>
+          <ol class="steps">
+            <li>Taps <b>Clock in</b> when they arrive at the office. Only works near the office beacon.</li>
+            <li>Taps <b>Clock out</b> when leaving.</li>
+            <li>The HOD sees who resumed and when. Registry gets monthly reports.</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>How cheating is stopped</h3>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Trick</th><th>What stops it</th></tr></thead>
+            <tbody>
+              <tr><td>Marking from the hostel</td><td>Bluetooth only reaches about 10–30 m. Out of range, the app never shows the Mark button.</td></tr>
+              <tr><td>Registering a friend's matric on your phone</td><td>Each matric number can be locked to one phone only. A second phone is refused.</td></tr>
+              <tr><td>Carrying a friend's phone to class and marking for them</td><td>Every mark needs the owner's fingerprint or face. A different finger fails.</td></tr>
+              <tr><td>Marking after the class ends</td><td>When the lecturer ends the session, the Bluetooth signal stops and the session code stops working.</td></tr>
+              <tr><td>Editing records before upload</td><td>Records are signed on the phone. Any change breaks the signature and the server refuses it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Things people will ask</h3>
+        <ul class="plain">
+          <li><b>"I lost my phone."</b> The student requests a phone change in the app. The course adviser or ICT unit approves it, and the old phone stops working.</li>
+          <li><b>"My phone is dead."</b> The lecturer marks the student by hand. The report shows it was marked by hand.</li>
+          <li><b>"I don't have a smartphone."</b> Same as above. The system never blocks a student from being marked.</li>
+          <li><b>"The lecturer's phone got stolen before upload."</b> Every student's phone also holds a copy of its own record and uploads it separately.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h3>Lecture time saved</h3>
+        <div class="calc">
+          <label for="cSize">Students in class<input id="cSize" type="number" min="1" value="150"></label>
+          <label for="cSec">Seconds per student, manual roll call<input id="cSec" type="number" min="1" value="12"></label>
+          <label for="cWeek">Lectures per week (one course)<input id="cWeek" type="number" min="1" value="2"></label>
+          <label for="cWeeks">Weeks in semester<input id="cWeeks" type="number" min="1" value="13"></label>
+        </div>
+        <div class="result">
+          <div><b id="rManual">30 min</b><span>manual roll call per lecture</span></div>
+          <div><b>3 min</b><span>with AttendSure per lecture</span></div>
+          <div><b id="rSaved">11.7 h</b><span>lecture time saved per course, per semester</span></div>
+        </div>
+        <p class="note">Estimates from the numbers above. Change them to match your own classes. A one-department pilot would give real figures.</p>
+      </div>
+
+      <div class="panel">
+        <h3>What the real system needs</h3>
+        <ul class="plain">
+          <li><b>An Android app</b> for students and lecturers, because Bluetooth needs a native app. Most students use Android.</li>
+          <li><b>A website</b> for HODs, Registry and admins to view reports and approve phone changes.</li>
+          <li><b>Portal access from the ICT unit</b>, through its API or an export file.</li>
+          <li><b>Data privacy.</b> Matric numbers and phone IDs are personal data under the Nigeria Data Protection Act 2023. Fingerprints never leave the phone; the app only learns "matched" or "did not match".</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+const WIN = 10000;
+const LEC_SECRET = "CVE201-L12-7Hq2xR";
+const OFF_SECRET = "CVE-OFF-01-K3m9";
+const ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const HELD_BEFORE = 11;
+
+function fnv(str){let h=0x811c9dc5;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}return h>>>0;}
+function token(secret,w){const h=fnv(secret+":"+w);let s="";for(let i=0;i<4;i++){s+=ALPH[(h>>>(i*5))&31];}return s;}
+const winOf = t => Math.floor(t/WIN);
+const hhmm = t => new Date(t).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = id => document.getElementById(id);
+
+const STUDENTS = [
+  {m:"CVE/2024/014",n:"Adaeze Okafor",h:11},
+  {m:"CVE/2024/031",n:"Ibrahim Musa",h:9},
+  {m:"CVE/2024/052",n:"Tolulope Adeyemi",h:10},
+  {m:"CVE/2024/067",n:"Chinedu Eze",h:7},
+  {m:"CVE/2024/078",n:"Fatima Bello",h:9},
+  {m:"CVE/2024/090",n:"Emeka Nwosu",h:8},
+  {m:"CVE/2024/103",n:"Halima Yusuf",h:10},
+  {m:"CVE/2024/115",n:"Oluwaseun Bakare",h:9},
+  {m:"CVE/2024/121",n:"Blessing Akpan",h:6}
+];
+const PHONES0 = [
+  {id:"p1",label:"Tecno phone · CVE/2024/014",reg:"CVE/2024/014"},
+  {id:"p2",label:"Infinix phone · CVE/2024/031",reg:"CVE/2024/031"},
+  {id:"p3",label:"Samsung phone · CVE/2024/052",reg:"CVE/2024/052"},
+  {id:"p4",label:"itel phone · CVE/2024/067",reg:"CVE/2024/067"},
+  {id:"p5",label:"Redmi phone · CVE/2024/078",reg:"CVE/2024/078"},
+  {id:"p6",label:"Tecno phone · CVE/2024/103",reg:"CVE/2024/103"},
+  {id:"p7",label:"New phone (not set up)",reg:null},
+  {id:"p8",label:"Infinix phone · CVE/2024/121",reg:"CVE/2024/121"}
+];
+const STAFF = [
+  {id:"SP-0412",n:"Engr. Dr. B. Adewale",r:"Lecturer I"},
+  {id:"SP-0177",n:"Mrs. K. Ogunleye",r:"Admin Officer"},
+  {id:"SP-0093",n:"Prof. A. Danjuma",r:"Head of Department"},
+  {id:"SP-0530",n:"Mr. S. Okon",r:"Lab Technologist"}
+];
+const byM = m => STUDENTS.find(s=>s.m===m);
+const staffBy = id => STAFF.find(s=>s.id===id);
+
+let S;
+function init(){
+  const now = Date.now();
+  S = {
+    online:false, started:false, active:false, endedUp:false, endAt:null,
+    phones: PHONES0.map(p=>({...p})),
+    marks:[], fp:null, regErr:null, fpErr:null,
+    staff:[], staffUp:[]
+  };
+  [["SP-0177","07:48"],["SP-0530","08:20"]].forEach(([id,time])=>S.staff.push({id,kind:"in",time,code:token(OFF_SECRET,winOf(now)),up:false}));
+  $("phoneSel").innerHTML = S.phones.map(p=>`<option value="${p.id}">${esc(p.label)}</option>`).join("");
+  $("phoneSel").value="p2";
+  render(); tick(true);
+}
+const curPhone = () => S.phones.find(p=>p.id===$("phoneSel").value);
+const inRange = () => document.querySelector('input[name="rng"]:checked').value==="in";
+const markOf = m => S.marks.find(x=>x.m===m);
+
+/* ---------- sync loop ---------- */
+setInterval(()=>{
+  if(!S.online) return;
+  const a = S.marks.find(x=>!x.upLec);
+  if(a){a.upLec=true;a.fresh=true;render();return;}
+  if(!S.active && !S.endedUp){S.endedUp=true;render();toast("Session closed and uploaded. Absent students are now final.");return;}
+  const b = S.marks.find(x=>x.how==="bt" && !x.upStu);
+  if(b){b.upStu=true;render();return;}
+  const s = S.staff.find(x=>!x.up);
+  if(s){s.up=true;S.staffUp.push({...s,fresh:true});render();}
+},500);
+
+/* ---------- rendering ---------- */
+function render(){
+  const on=S.online;
+  $("netBtn").setAttribute("aria-pressed",on);
+  $("netTxt").textContent = on ? "Internet is on · tap to cut it" : "Internet is off · tap to restore";
+  ["lec","stu","sf"].forEach(p=>{$(p+"Dot").classList.toggle("on",on);$(p+"Sig").textContent=on?"Online":"No internet";});
+  renderLecturer(); renderStudent(); renderReport(); renderStaff();
+}
+
+function renderLecturer(){
+  $("lecIdle").style.display = S.started ? "none" : "";
+  $("lecLive").style.display = S.started ? "" : "none";
+  $("lecRings").classList.toggle("idle",!S.active);
+  $("lecCastT").textContent = S.active ? "Attendance is open" : "Session ended";
+  $("lecCount").textContent = S.marks.length;
+  $("lecTotal").textContent = STUDENTS.length;
+  const present = S.marks.slice().reverse().map(x=>`<li><span>${x.m}</span><span>${x.how==="hand"?"by hand":hhmm(x.at)}</span></li>`);
+  const absent = S.active ? [] : STUDENTS.filter(s=>!markOf(s.m)).map(s=>`<li class="absent"><span>${s.m}</span><span>absent</span></li>`);
+  $("lecList").innerHTML = present.concat(absent).join("") || `<li><span>No one yet</span><span></span></li>`;
+  const left = STUDENTS.filter(s=>!markOf(s.m));
+  $("manSel").innerHTML = left.map(s=>`<option value="${s.m}">${s.m}</option>`).join("") || `<option value="">Everyone is marked</option>`;
+  if(left.some(s=>s.m==="CVE/2024/090")) $("manSel").value="CVE/2024/090";
+  $("manSel").disabled = $("manBtn").disabled = !S.active || !left.length;
+  $("endBtn").disabled = !S.active;
+  $("endBtn").textContent = S.active ? "End session" : `Session ended at ${hhmm(S.endAt)}`;
+}
+
+const FP = `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a6 6 0 0 1-1.5 4"/><path d="M8.5 8.5A4 4 0 0 1 16 11v2a10 10 0 0 1-.6 3.5"/><path d="M6 11a6 6 0 0 1 10.5-4"/><path d="M8 13.5a14 14 0 0 1-.8 4"/><path d="M18.5 9.5A6.5 6.5 0 0 1 19 12v1"/><path d="M4.5 9A8 8 0 0 1 12 4a8 8 0 0 1 3 .6"/></svg>`;
+
+function renderStudent(){
+  const p = curPhone(), app=$("stuApp");
+  if(!p.reg){
+    app.innerHTML = `
+      <div class="card none">
+        <h4>Welcome to AttendSure</h4>
+        <p class="meta">Enter your matric number to register this phone. Once registered, it is locked to this phone and cannot be changed by you.</p>
+        <label class="lbl" for="regIn">Matric number</label>
+        <input type="text" id="regIn" placeholder="CVE/2024/115" autocomplete="off">
+        <button class="primary" id="regBtn">Register this phone</button>
+      </div>
+      ${S.regErr?`<div class="card err"><h4>Can't register</h4><p>${esc(S.regErr)}</p></div>`:""}`;
+    $("regBtn").onclick = register;
+    $("regIn").addEventListener("keydown",e=>{if(e.key==="Enter")register();});
+    return;
+  }
+  const st = byM(p.reg), mk = markOf(p.reg);
+  let body;
+  if(mk){
+    body = `<div class="card done"><h4>Marked present</h4><p>CVE 201 · ${mk.how==="hand"?"marked by the lecturer":hhmm(mk.at)}</p>
+      <p class="meta">${mk.how==="hand"?"Your lecturer marked you by hand.":"Saved on this phone and sent to the lecturer's phone by Bluetooth."} ${mk.how==="bt"?(mk.upStu?"Backup copy uploaded.":"Backup copy will upload when you're online."):""}</p></div>`;
+  } else if(!S.started){
+    body = `<div class="card none"><h4>No attendance open yet</h4><p class="meta">Waiting for your lecturer to start attendance. The app will show it here when your phone picks up the lecturer's Bluetooth signal.</p></div>`;
+  } else if(!S.active){
+    body = `<div class="card none"><h4>Attendance closed</h4><p class="meta">The lecturer ended the CVE 201 session at ${hhmm(S.endAt)}. You were not marked.</p></div>`;
+  } else if(!inRange()){
+    body = `<div class="card none"><h4>No attendance nearby</h4><p class="meta">The app is listening for a lecturer's Bluetooth signal. Nothing in range. You need to be in the lecture hall.</p></div>`;
+  } else if(S.fp===p.id){
+    body = `<div class="card open"><h4>Confirm it's you</h4><div class="fp">${FP}</div><p class="meta" style="text-align:center">Touch the fingerprint sensor</p>
+      <button class="primary" id="fpOk">Owner's finger</button>
+      <button id="fpBad">Someone else's finger</button>
+      <button class="ghost" id="fpCancel">Cancel</button></div>`;
+  } else {
+    body = `<div class="card open"><h4>CVE 201 attendance is open</h4>
+      <p>Strength of Materials · Engr. Dr. B. Adewale</p>
+      <p class="meta">Signal strong, about 6 m away · code heard <b class="code" id="stuCode" style="font-size:.85rem">${token(LEC_SECRET,winOf(Date.now()))}</b></p>
+      <button class="primary" id="markBtn">Mark me present</button></div>
+      ${S.fpErr===p.id?`<div class="card err"><h4>Fingerprint didn't match</h4><p>Not marked. Only the owner of ${st.m} can mark attendance on this phone.</p></div>`:""}`;
+  }
+  app.innerHTML = `<div class="idbar"><div><b>${st.m}</b><span>CVE 201 · 200 level</span></div><span class="lock">Locked to this phone</span></div>${body}
+    <p class="note">Attendance so far this semester: <b>${pctOf(st)}%</b></p>`;
+  const b=$("markBtn"); if(b) b.onclick=()=>{S.fp=p.id;S.fpErr=null;render();};
+  const o=$("fpOk"); if(o) o.onclick=()=>{
+    S.fp=null; const at=Date.now();
+    S.marks.push({m:p.reg,phone:p.id,at,code:token(LEC_SECRET,winOf(at)),how:"bt",upLec:false,upStu:false,fresh:false});
+    render(); toast(`${st.m} marked present. Sent to the lecturer's phone by Bluetooth.`);
+  };
+  const x=$("fpBad"); if(x) x.onclick=()=>{S.fp=null;S.fpErr=p.id;render();};
+  const c=$("fpCancel"); if(c) c.onclick=()=>{S.fp=null;render();};
+}
+
+function register(){
+  const p=curPhone(); const v=$("regIn").value.trim().toUpperCase();
+  const st = byM(v);
+  if(!st){S.regErr=`${v||"That"} is not on the CVE 201 class list. Check the matric number.`;render();return;}
+  const other = S.phones.find(x=>x.reg===v);
+  if(other){S.regErr=`${v} is already registered to another phone. If you changed phones, request a phone change and your course adviser will approve it.`;render();return;}
+  p.reg=v; p.label=`New phone · ${v}`; S.regErr=null;
+  const sel=$("phoneSel"); sel.querySelector(`option[value="${p.id}"]`).textContent=p.label;
+  render(); toast(`Phone registered to ${v}. This matric number is now locked to this phone.`);
+}
+
+function pctOf(st){
+  const mk=markOf(st.m);
+  const att = st.h + (mk && mk.upLec ? 1 : 0);
+  const held = HELD_BEFORE + (S.endedUp ? 1 : 0);
+  return Math.round(att/held*100);
+}
+
+function renderReport(){
+  const on=S.online, waiting=S.marks.filter(x=>!x.upLec).length;
+  const st=$("srvState"); st.className="state "+(on?"on":"off");
+  if(!S.started){
+    st.innerHTML = `<b>Lecture 12 has not started.</b>The lecturer hasn't tapped Start attendance yet.`;
+  } else if(!on){
+    st.innerHTML = `<b>No internet.</b>${waiting} record${waiting===1?"":"s"} saved on the lecturer's phone${S.active?"":", plus the session-closed record"}. Nothing is lost. The report updates when any connection returns.`;
+  } else if(waiting || (!S.active && !S.endedUp)){
+    st.innerHTML = `<b>Online. Uploading…</b>Records are arriving from the lecturer's phone.`;
+  } else if(S.active){
+    st.innerHTML = `<b>Online. Up to date.</b>The session is still open, so absences are not final yet. End the session to finish the report.`;
+  } else {
+    st.innerHTML = `<b>Online. Lecture 12 complete.</b>Present, absent and percentages are final for this lecture.`;
+  }
+  let pres=0,hand=0,abs=0,risk=0;
+  $("srvBody").innerHTML = STUDENTS.map(s=>{
+    const mk=markOf(s.m); let today, cls="";
+    if(mk && mk.upLec){pres++; if(mk.how==="hand"){hand++; today=`<span class="pill ok">Present</span><span class="why">Marked by hand</span>`;} else today=`<span class="pill ok">Present</span><span class="why">${hhmm(mk.at)} · fingerprint confirmed</span>`; if(mk.fresh){cls="new";mk.fresh=false;}}
+    else if(mk) today=`<span class="pill wait">On lecturer's phone</span><span class="why">Waiting for internet</span>`;
+    else if(S.endedUp){abs++; today=`<span class="pill bad">Absent</span>`;}
+    else today=`<span class="pill wait">Not marked yet</span>`;
+    const pc=pctOf(s), low=pc<75; if(low) risk++;
+    return `<tr class="${cls}"><td><b style="font-family:var(--mono);font-size:.85rem">${s.m}</b></td><td>${today}</td><td><span class="pct ${low?"low":""}">${pc}%</span><div class="meter ${low?"low":""}"><i style="width:${pc}%"></i></div>${low?`<span class="risk">Below 75% exam requirement</span>`:""}</td></tr>`;
+  }).join("");
+  $("tPres").textContent=pres; $("tAbs").textContent=S.endedUp?abs:"–"; $("tHand").textContent=hand; $("tRisk").textContent=risk;
+  $("portalN").textContent = S.endedUp?1:0;
+  $("portalTxt").textContent = S.endedUp ? `lecture sent to the university portal: CVE 201, lecture 12, ${pres} present, ${abs} absent` : "lectures sent to the university portal so far (sent after the session closes and uploads)";
+}
+
+function renderStaff(){
+  const on=S.online, sw=S.staff.filter(x=>!x.up).length;
+  const ss=$("sfState"); ss.className="state "+(on?"on":"off");
+  ss.innerHTML = on ? (sw?`<b>Online. Uploading ${sw} record${sw>1?"s":""}…</b>`:`<b>Online. Up to date.</b>`) : `<b>No internet.</b>${sw} clock record${sw===1?"":"s"} waiting on staff phones.`;
+  $("sfOut").innerHTML = S.staff.slice().reverse().map(r=>`<li><span>${esc(staffBy(r.id).n)} · ${r.kind} ${r.time}</span><span>${r.up?"uploaded":"waiting"}</span></li>`).join("") || `<li><span>Nothing saved yet</span><span></span></li>`;
+  let ok=0,late=0,no=0;
+  $("sfBody").innerHTML = STAFF.map(s=>{
+    const ins=S.staffUp.filter(r=>r.id===s.id&&r.kind==="in"), outs=S.staffUp.filter(r=>r.id===s.id&&r.kind==="out");
+    const i=ins[0], o=outs[outs.length-1]; let fresh=false;
+    [...ins,...outs].forEach(r=>{if(r.fresh){fresh=true;r.fresh=false;}});
+    let pill;
+    if(!i){no++; pill=`<span class="pill bad">Not in yet</span>`;}
+    else if(i.time>"08:00"){late++; pill=`<span class="pill warn">Late</span><span class="why">Arrived after 08:00</span>`;}
+    else {ok++; pill=`<span class="pill ok">On time</span>`;}
+    let hrs="";
+    if(i&&o){const [a,b]=i.time.split(":").map(Number),[c,d]=o.time.split(":").map(Number);const m=(c*60+d)-(a*60+b);if(m>0)hrs=`<span class="why">${Math.floor(m/60)} h ${m%60} m on duty</span>`;}
+    return `<tr class="${fresh?"new":""}"><td>${esc(s.n)}<span class="sub">${esc(s.r)}</span></td><td class="t">${i?i.time:"–"}</td><td class="t">${o?o.time:"–"}${hrs}</td><td>${pill}</td></tr>`;
+  }).join("");
+  $("sOk").textContent=ok;$("sLate").textContent=late;$("sNo").textContent=no;$("sWait").textContent=sw;
+}
+
+/* ---------- rotating codes ---------- */
+let lastW=null;
+function tick(force){
+  const now=Date.now(), w=winOf(now), left=WIN-(now%WIN), pct=(left/WIN*100).toFixed(1)+"%";
+  $("lecBar").style.width = S.active?pct:"0%";
+  $("offBar").style.width = pct;
+  if(w!==lastW||force){
+    lastW=w;
+    $("lecCode").textContent = S.active?token(LEC_SECRET,w):"----";
+    $("lecCastS").textContent = S.active?"Code changes every 10 s. Reaches students in the hall, not outside.":"Bluetooth signal stopped. Nobody can mark attendance now.";
+    $("offCode").textContent = token(OFF_SECRET,w);
+    const sc=$("stuCode"); if(sc) sc.textContent=token(LEC_SECRET,w);
+  }
+}
+setInterval(()=>tick(false),250);
+
+let tt;
+function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),3000);}
+
+/* ---------- controls ---------- */
+$("phoneSel").addEventListener("change",()=>{S.fp=null;S.regErr=null;S.fpErr=null;render();});
+document.querySelectorAll('input[name="rng"]').forEach(r=>r.addEventListener("change",()=>{S.fp=null;render();}));
+$("manBtn").onclick=()=>{
+  const m=$("manSel").value; if(!m) return;
+  S.marks.push({m,phone:null,at:Date.now(),code:"",how:"hand",upLec:false,upStu:true,fresh:false});
+  render(); toast(`${m} marked present by hand.`);
+};
+$("startBtn").onclick=()=>{
+  S.started=true; S.active=true; tick(true); render();
+  toast("Attendance started. Your phone is now sharing CVE 201 over Bluetooth.");
+};
+$("endBtn").onclick=()=>{
+  S.active=false; S.endAt=Date.now(); S.fp=null; tick(true); render();
+  const abs=STUDENTS.length-S.marks.length;
+  toast(`Session ended. ${S.marks.length} present, ${abs} absent. Nobody can mark now.`);
+};
+$("netBtn").onclick=()=>{S.online=!S.online;render();toast(S.online?"Internet restored. Phones are uploading their saved records.":"Internet cut. Attendance keeps working over Bluetooth.");};
+$("resetBtn").onclick=()=>{init();toast("Demo reset.");};
+
+function clock(kind){
+  const id=$("sfSel").value,time=$("sfTime").value,s=staffBy(id);
+  if(document.querySelector('input[name="sloc"]:checked').value==="far"){toast("No department beacon nearby. Clock-in only works in the office.");return;}
+  if(kind==="in"&&S.staff.some(r=>r.id===id&&r.kind==="in")){toast(`${s.n} has already clocked in today.`);return;}
+  if(kind==="out"&&!S.staff.some(r=>r.id===id&&r.kind==="in")){toast(`${s.n} must clock in before clocking out.`);return;}
+  if(kind==="out"&&time<"12:00"){toast("Pick an afternoon time (16:05 or 17:10) to clock out.");return;}
+  S.staff.push({id,kind,time,code:token(OFF_SECRET,winOf(Date.now())),up:false});
+  render(); toast(`${s.n} clocked ${kind} at ${time}. ${S.online?"Uploading now.":"Saved on the phone."}`);
+}
+$("sfSel").innerHTML=STAFF.map(s=>`<option value="${s.id}">${esc(s.n)} · ${esc(s.r)}</option>`).join("");
+$("inBtn").onclick=()=>clock("in");
+$("outBtn").onclick=()=>clock("out");
+
+function calc(){
+  const n=+$("cSize").value||0,sec=+$("cSec").value||0,wk=+$("cWeek").value||0,wks=+$("cWeeks").value||0;
+  const manual=n*sec/60,saved=Math.max(0,manual-3)*wk*wks/60;
+  $("rManual").textContent=`${Math.round(manual)} min`;$("rSaved").textContent=`${saved.toFixed(1)} h`;
+}
+["cSize","cSec","cWeek","cWeeks"].forEach(id=>$(id).addEventListener("input",calc));
+calc();
+
+function route(){
+  const v=["lecture","staff","how"].includes(location.hash.slice(1))?location.hash.slice(1):"lecture";
+  document.querySelectorAll(".view").forEach(el=>el.classList.toggle("on",el.id==="v-"+v));
+  document.querySelectorAll(".tabs a").forEach(a=>{if(a.dataset.v===v)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
+}
+window.addEventListener("hashchange",route);
+route();
+init();
+})();
+</script>
+</body>
+</html>
